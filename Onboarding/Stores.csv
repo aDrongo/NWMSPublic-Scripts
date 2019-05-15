@@ -1,0 +1,4 @@
+#This file keeps a Stores dictionary to be used by New-NWMSUser script
+#OU,Address,City,PO,DealerMe
+Value
+OU,Address,City,PO,DealerMe

@@ -1,0 +1,4 @@
+#This file keeps a Positions dictionary to be used by New-NWMSUser script
+#Title, Department, Security Group, Email Group, DealerMe
+Value
+Title,Department,Security Group,Email Group,DealerMe
