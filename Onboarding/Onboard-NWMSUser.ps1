@@ -2,12 +2,14 @@
 .SYNOPSIS
     Script to create new users or rehires
 .DESCRIPTION
-    Define Functions
+    Import Functions
     Create Passwords
-    Import Positions & Store Dictionary
+    Import Positions & Store, create Dictionaries
     Get User Data
     Select Position and Store
-    Create or Set AD User
+    If transfer Set Users
+    If rehire Set User
+    Else Create User
     Add to Groups if defined
     Run Exchange directory update script
     Import Selenium script template, replace variables and export
@@ -16,106 +18,29 @@
 .NOTES
      Author     : Benjamin Gardner bgardner160@gmail.com
 #>
-
+#region section one - initialize
 
 #Start Log
 $timestamp = Get-Date -Format FileDateTime
 Try{
-    $logpath = "\\internal.contoso.com\resources\scripts\Logs\Onboard-NWMSUser\$($timestamp).txt"
+    $logpath = "\\internal.contoso.com\resources\scripts\Logs\Onboard-contosoUser\$($timestamp).txt"
     New-Item $logpath -Force -ErrorAction Stop
 }
 Catch {
-    $logpath = "C:\Logs\Onboard-NWMSUser\$($timestamp).txt"
+    $logpath = "C:\Logs\Onboard-contosoUser\$($timestamp).txt"
     New-Item $logpath -Force
 }
 Start-Transcript -LiteralPath $logpath
 
 Import-Module ActiveDirectory
 
+. \\internal.contoso.com\resources\scripts\Select-ADUser.ps1
+. \\internal.contoso.com\resources\scripts\Modules\GeneratePassword.ps1
+. \\internal.contoso.com\resources\scripts\Modules\Search-Dictionary.ps1
+. \\internal.contoso.com\resources\scripts\Modules\DealerSocketSignature.ps1
+. \\internal.contoso.com\resources\scripts\Modules\SyncADUserFromDealerMe.ps1
 
-#Search Function for Dictionaries
-Function Search-Dictionary($Dictionary) {
-    #Write Dictionary for user to view
-    Write-Host $($Dictionary | Out-String)
-    #Loop untill valid result
-    :loop while ($true){
-        #Get User input
-        $Number = $(Read-Host('Enter No. or "search" or "skip"'))
-        #check user input
-        if ($Number -notmatch "^[0-9]*$" -AND $Number -notmatch "search" -AND $Number -notmatch "skip"){
-            Write-Host "Invalid input"
-        }
-        #If valid move to next
-        else {
-            break loop
-        }
-    }
-    #If Search selected
-    if ($Number -match 'search'){
-        #loop untill valid result
-        :loop while ($true){
-            #search result dictionary
-            $Result = [ordered]@{}
-            $Search = Read-Host ('Type search term')
-            #Loop through Keys in dictionary, pair keys to values and evalute the values against search term, if match then store in Result dictionary
-            foreach ($Key in $Dictionary.keys){
-                $Value = $Dictionary.$($Key)[0]
-                if ($Value -like "*$Search*"){
-                    $Result += @{"$Key" = $Dictionary.$($Key)}
-                }
-            }
-            #If Results contains values then present to user and get them to select or search again
-            if($Result.Count -ge 1){
-                Write-Host $($Result | Out-String)
-                $Number = $(Read-Host('Enter No. or "search"'))
-                #if user input valid then break loop
-                if ($Number -match "^[0-9]*$"){
-                    break loop
-                }
-            }
-            #Else let user know no results and get to search again
-            else{
-                Write-Host "Couldn't find anything matching $Search"
-                if($(Read-Host('Search again Y/N?')) -match 'n'){
-                $Number = 'skip'
-                break loop}
-            }
-        }
-    }
-    return $Number
-}
-
-
-#Random character function for Password
-function Get-RandomCharacters($length, $characters) { 
-    $random = 1..$length | ForEach-Object { Get-Random -Maximum $characters.length } 
-    $private:ofs="" 
-    return [String]$characters[$random]
-}
-
-#Generate a Password
-function GeneratePassword(){
-    $Password = Get-RandomCharacters -length 6 -characters 'abcdefghikmnoprtuvwxyz'
-    $Password += Get-RandomCharacters -length 1 -characters 'ABCDEFGHKLMNPRTUVWXYZ'
-    $Password += Get-RandomCharacters -length 1 -characters '1234567890'
-    Return $Password
-}
-
-
-$Password1 = GeneratePassword
-$Password2 = GeneratePassword
-$Password3 = GeneratePassword
-
-#For Transcript
-Write-Output $Password1
-Write-Output $Password2
-Write-Output $Password3
-#Secure version for AD
-$PasswordSecure = $Password1 | ConvertTo-SecureString -AsPlainText -Force
-
-
-#Create Stores Dictionary
-#CSV Import and ignore comment line
+#Get Stores list from CSV
 $csv = Get-Content \\internal.contoso.com\resources\scripts\Onboarding\Stores.csv | Select-String '^[^#]' | ConvertFrom-Csv -Delimiter ';'
 $Stores = @{}
 $i=0
@@ -127,8 +52,7 @@ foreach ($item in $csv){
     $Stores[[int]$($i)] = $array
 }
 
-#Create Positions Dictionary
-#CSV Import and ignore comment line
+#Get Positions list from CSV
 $csv = Get-Content \\internal.contoso.com\resources\scripts\Onboarding\Positions.csv | Select-String '^[^#]' | ConvertFrom-Csv -Delimiter ';'
 $Positions = @{}
 $i=0
@@ -141,17 +65,15 @@ foreach ($item in $csv){
 }
 cls
 
-
-######
-#Body#
-######
-
 Write-Host("Logging to $logpath")
+
+#endregion
+#region section two - get user data
 
 #Get Hire Status
 $HireStatus = $null
-While ($HireStatus -notmatch 'N' -AND $HireStatus -notmatch 'R'){
-    $HireStatus = $(Read-Host('Is this a new user(N) or re-hire(R)? N/R'))
+While ($HireStatus -notmatch '[NRT]'){
+    $HireStatus = $(Read-Host('Is this a new user(N) or re-hire(R) or transfer(T)? N/R/T'))
 }
 
 #Get User Data
@@ -159,21 +81,38 @@ $FirstName = $(Read-Host('Enter First Name'))
 Write-Output $FirstName
 $LastName = $(Read-Host('Enter Last Name'))
 Write-Output $LastName
-$Mobile = $(Read-Host('Enter Mobile'))
-Write-Output $Mobile
-$ID = $(Read-Host('Enter ID'))
-Write-Output $ID
 
-#Create other user data from entered data
+if ($HireStatus -notmatch "T"){
+  #Get extra data
+  $Mobile = $(Read-Host('Enter Mobile'))
+  Write-Output $Mobile
+  $ID = $(Read-Host('Enter ID'))
+  Write-Output $ID
+
+  #Generate Passwords
+  $Password1 = GeneratePassword
+  $Password2 = GeneratePassword
+  $Password3 = GeneratePassword
+
+  #Write output for Transcript records
+  Write-Output $Password1
+  Write-Output $Password2
+  Write-Output $Password3
+
+  #Secure version for AD
+  $PasswordSecure = $Password1 | ConvertTo-SecureString -AsPlainText -Force
+}
+#Combine user data
 $FullName = $FirstName+' '+$LastName
 $Sam = ($FirstName+'.'+$LastName).ToLower()
-$UPN = $Sam+'@nwmotorsport.com'
+$UPN = $Sam+'@contoso.com'
 
 #Get users Title from Dictionary, Search Dictionary and retrieve index with associated values, option to skip/create Title.
+#Indexes are respectively Title, Department, Security Group, Distribution Group, DealerMe, Details
 Write-Host 'Select a Title:'
 $PositionNumber = Search-Dictionary($Positions)
 if ($PositionNumber -notmatch "skip"){
-    $Position = $Positions.$([int]$($PositionNumber))[0,1,2,3,4]
+    $Position = $Positions.$([int]$($PositionNumber))[0,1,2,3,4,5]
     Write-Host "You selected: $PositionNumber"
     Write-Host "Title:$($Position[0])"
 }
@@ -183,51 +122,37 @@ if ($PositionNumber -match "skip"){
 }
 
 #Get Location from Dictionary, Search Dictionary and retrieve index with associated values
+#Indexes are res[ectively OU,Group/Address,City,PO,DealerMe,Team,Manager
 Write-Host 'Select a Store:'
 $LocationIndex = Search-Dictionary($Stores)
-$Location = $Stores.$([int]$($LocationIndex))[1,2,3,4]
-Write-Host "You selected: $LocationIndex"
-Write-Host "Location: $Location"
+$Location = $Stores.$([int]$($LocationIndex))[1,2,3,4,5,6]
+$OU = $Stores.$([int]$($LocationIndex))[0]
+Write-Host "You selected: $OU"
 
 #Get OU Path from Location
-$OU = $Stores.$([int]$($LocationIndex))[0]
-$OUPath = "OU=$OU,OU=NWMS Users,DC=internal,DC=contoso,DC=com"
+$OUPath = "OU=$OU,OU=contoso Users,DC=internal,DC=contoso,DC=com"
 
-#Space it out for the User
-sleep 1
-Write-Host "Creating User..."
-sleep 1
+#endregion
+#region section three - set user
 
 #If Re-Hire
 if ($HireStatus -like 'R'){
     #Splat data for rehire
-    $OldUser = @{ 
-            # Commented out section not needed, another app syncs this data to the user AD profile.
-            #'SamAccountName' = $Sam
-            #'Name' = $FullName
-            #'GivenName' = $FirstName
-            #'Surname' = $LastName
-            #'UserPrincipalName' = $Sam+'@nwmotorsport.com'
-            #'Department' = $Position[1]
-            #'Title' = $Position[0]
-            #'StreetAddress' = $Location[0]
-            #'City' = $Location[1]
-            #'POBox' = $Location[2]
-            #'Country' = 'US'
-            #'Company' = 'Northwest Motorsport'
-            'AccountPassword' = $PasswordSecure
+    $OldUser = @{
             'ChangePasswordAtLogon' = $True
-            'Path' = $OUPath
             'Enabled' = $True
     }
     Write-Output $OldUser
-    #Attempt to get user from AD
-    $Users = @()
+
+    #Get user and make changes
+    $User = @()
     Try {
-        $Users = Get-ADUser $Sam -ErrorAction Stop
-        Write-Host "Success! Found: $($Users.Name)"
+        $User = Select-ADUser -Identity $FullName -ErrorAction Stop
         if ($(Read-Host('Procceed with this user? Y/N')) -match 'y'){
-            Set-ADUser -SamAccountName $Sam @OldUser -Verbose
+            $User | Set-ADUser @OldUser -Verbose
+            Set-ADAccountPassword -Identity $User -NewPassword $PasswordSecure -Verbose
+            $User | Move-ADObject -TargetPath $OUPath -Verbose
+            Set-ADuser -Identity $User.ObjectGUID.Guid -Replace @{msExchHideFromAddressLists="FALSE"} -verbose -ErrorAction SilentlyContinue
         }
     }
 
@@ -236,7 +161,7 @@ if ($HireStatus -like 'R'){
         if ($(Read-Host("Couldn't find user. Create new user? Y/N")) -match 'y'){
             $HireStatus = 'N'
         }
-        else { 
+        else {
             Write-Host('Nothing to do, exiting')
             sleep 5
             exit
@@ -244,23 +169,31 @@ if ($HireStatus -like 'R'){
     }
 }
 
+#If Transfer
+if ($HireStatus -like 'T'){
+    #Get user and make changes
+    $User = @()
+    While ($User.count -le 1){
+        $User = Select-ADUser -Identity $Sam
+        if ($(Read-Host('Procceed with this user? Y/N')) -match 'y'){
+            $User | Move-ADObject -TargetPath $OUPath -Verbose
+        }
+        else {
+          $Sam = Read-Host('Enter a different Sam')
+        }
+    }
+}
+
 #If New Hire
 if ($HireStatus -like 'N'){
     #Splat data for new user
-    $NewUser = @{ 
-            # Commented out section not needed, another app syncs this data to the user AD profile.
+    $NewUser = @{
             'SamAccountName' = $Sam
             'Name' = $FullName
             'GivenName' = $FirstName
             'Surname' = $LastName
-            'UserPrincipalName' = $Sam+'@nwmotorsport.com'
-            #'Department' = $Position[1]
-            #'Title' = $Position[0]
-            #'StreetAddress' = $Location[0]
-            #'City' = $Location[1]
-            #'POBox' = $Location[2]
-            #'Country' = 'US'
-            #'Company' = 'Northwest Motorsport'
+            'DisplayName' = $FullName
+            'UserPrincipalName' = $Sam+'@contoso.com'
             'AccountPassword' = $PasswordSecure
             'ChangePasswordAtLogon' = $True
             'Path' = $OUPath
@@ -271,6 +204,14 @@ if ($HireStatus -like 'N'){
     New-ADUser @NewUser -Verbose
 }
 
+#Select AD Object if not already selected
+Try{
+    if ($User.GetType().FullName -ne "Microsoft.ActiveDirectory.Management.ADUser"){
+        $User = Select-ADUser -Identity $Sam
+    }
+}
+Catch { $User = Select-ADUser -Identity $Sam }
+
 #Skip if custom Groups defined
 if ($PositionNumber -notmatch "skip"){
     #Add to Groups
@@ -278,13 +219,14 @@ if ($PositionNumber -notmatch "skip"){
     Add-ADGroupMember -Identity $($Location[0]+' '+$Position[3]) -Members $Sam -Verbose
 }
 
-#Directory Update script
+#endregion
+#region section four - run smtp batch update, open worksheet, export selenium script
+
+#Proxy Address Update script
 If($(Read-Host('Run Directory Update? Y/N')) -match 'y'){
-    invoke-item "\\share\public\Directory Maintainence\SMTP Batch Update.vbs"
+    invoke-item "\\server\public\Directory Maintainence\SMTP Batch Update.vbs"
     Write-Host "Proceed after directory update"
 }
-
-Pause
 
 #Create Selenium script from template
 $Script = Get-Content "\\internal.contoso.com\resources\scripts\Onboarding\Onboard.side"
@@ -293,28 +235,29 @@ $Script = $Script.Replace('$LastName',"$($LastName)")
 $Script = $Script.Replace('$FullName',"$($FullName)")
 $Script = $Script.Replace('$Title',"$($Position[0])")
 Try {
-$Script = $Script.Replace('$Department',"$($Position[3])")
+  $Script = $Script.Replace('$Department',"$($Position[3])")
 }
 Catch {Write-Ouput "Failed to add a Department"}
 Try {
-$Script = $Script.Replace('$DMeDepartment',"$($Position[4])")
+  $Script = $Script.Replace('$DMeDepartment',"$($Position[4])")
 }
 Catch {Write-Ouput "Failed to add a Dealer Me Department"}
 Try {
-$Script = $Script.Replace('$Location',"$($Location[3])")
+  $Script = $Script.Replace('$Location',"$($Location[3])")
 }
 Catch {Write-Ouput "Failed to add a Location"}
-$Script = $Script.Replace('$ID',"$($ID)")
+$Script = $Script.Replace('$team',"$($Location[4])")
+$Script = $Script.Replace('$manager',"$($Location[5])")
 $Script = $Script.Replace('$Sam',"$($Sam)")
-$Script = $Script.Replace('$Email',"$($Sam+'@northwestmotorsport.com')")
-$Script = $Script.Replace('$PASSWORD2',"$($Password2)")
-$Script = $Script.Replace('$PASSWORD3',"$($Password3)")
-#Cleaned up mobile number
-$Mobile2 = $Mobile.Replace("-","")
-$Mobile2 = $Mobile2.Replace(" ","")
-$Mobile2 = $Mobile2.Replace(")","")
-$Mobile2 = $Mobile2.Replace("(","")
-$Script = $Script.Replace('$Mobile',"$($Mobile2)")
+$Script = $Script.Replace('$Email',"$($UPN)")
+if ($HireStatus -notmatch "T"){
+  $Script = $Script.Replace('$ID',"$($ID)")
+  $Script = $Script.Replace('$PASSWORD2',"$($Password2)")
+  $Script = $Script.Replace('$PASSWORD3',"$($Password3)")
+  #strip mobile number
+  $MobileStrip = $Mobile -replace '[- )(]',""
+  $Script = $Script.Replace('$Mobile',"$($MobileStrip)")
+}
 
 #Export script
 $Path = "\\internal.contoso.com\resources\scripts\Onboarding\Users\$($FullName).side"
@@ -322,13 +265,19 @@ Write-Host "Selenium script exported to $Path"
 $Script | Out-File -FilePath $Path -Force -Verbose
 
 #Open browser to use Selenium
-Start-Process -FilePath 'C:\Program Files\Mozilla Firefox\firefox.exe'
+Try{
+    get-process -Name 'firefox'
+}
+Catch {
+    Start-Process -FilePath 'C:\Program Files\Mozilla Firefox\firefox.exe'
+}
 
 #Open documentation sheet
-Invoke-Item "$env:UserProfile\Contoso\IT Department - Documents\Employee Management\Employee Onboarding Worksheet.dotx"
+if ($HireStatus -notmatch "T"){Invoke-Item "$($env:UserProfile)\contoso\IT Department - Documents\Employee Management\Employee Onboarding Worksheet.dotx"}
+else {Invoke-Item "$($env:UserProfile)\contoso\IT Department - Documents\Employee Management\Employee Transfer Worksheet.dotx"}
 
 #Data to copy into sheet
-Write-Host "
+$DataSheet = "
 Name = $FullName
 Mobile Number = $Mobile
 Email Address = $Upn
@@ -342,25 +291,38 @@ Keytrak Password = $Password3
 VAuto Password = $Password2
 Groups = $($Position[2])
 Groups = $($Location[0]+' '+$Position[3])
+Sales Team = $($Location[4])
+Sales Manager = $($Location[5])
+Details = $($Position[5])
 "
-#Remind to attach O365 Licensce
-if ($Position[0] -match "Sales Rep"){
-    Write-Host "Add Exchange License Business`n"
-}
-elseif ($Position[1] -notmatch "Lot Technician"){
-    Write-Host "Add Exchange License E3`n"
-}
-#Remind user to attach Groups
-if ($PositionNumber -match "skip"){
-    Write-Host '!!!!!!!!!!!!!!!!!'
-    Write-Host 'Need to manually add users AD Groups'
-}
+Echo $DataSheet
+#save to temp
+cd $env:TEMP
+$DataSheet > "temp.txt"
+#open temp data
+invoke-item .\temp.txt
 
-#Stop and wait for user
-Pause
-stop-transcript
+Write-Host "Please enable Mailbox first then DealerMe then other steps"
+Write-Host "User shoud be granted: $($Position[5])"
 
-If($(Read-Host('Run AD Sync Update? Y/N')) -match 'y'){
-    ."\\Contoso\public\Directory Maintainence\AD External Data Sync\ContosoAPICall.ps1"
+#endregion
+#region section five - dealersocket sig
+
+#Sync AD user with Dealerme
+If($(Read-Host("Update DealerMe before running this.`nRun AD Sync Update? Y/N")) -match 'y'){
+    Sync-ADUserFromDealerMe -ADUser $User
     Write-Host "Proceed after AD Sync update"
 }
+
+#Get sales1 Signature
+If($(Read-Host('Continue with Sales Signature? Y/N')) -match 'y'){
+$Signature = Get-DealerSocketSignature -Identity $Sam
+Set-Clipboard $Signature
+Write-Host $Signature
+Write-Host ("Sales Signature set to clipboard")
+#open with Chrome because it's a stupid website
+[system.Diagnostics.Process]::Start("chrome","Sales1")
+}
+#endregion
+Stop-Transcript
+Pause

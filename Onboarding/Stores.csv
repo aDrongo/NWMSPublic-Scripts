@@ -1,4 +1,4 @@
-#This file keeps a Stores dictionary to be used by New-NWMSUser script
-#OU,Address,City,PO,DealerMe
+#This file keeps a Stores dictionary to be used by Onboard-NWMSUser script
+#OU,Address,City,PO,DealerMe,DSTeam,DSManager
 Value
-OU,Address,City,PO,DealerMe
+OU,Address,City,PO,DealerMe,DSTeam,DSManager
