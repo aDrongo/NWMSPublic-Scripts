@@ -2,7 +2,7 @@
 cd (Get-Location).ProviderPath
 
 #Load Functions
-. \\internal.northwestmotorsportinc.com\resources\scripts\Modules\Search-Array.ps1
+. \\internal.CONTOSO.com\resources\scripts\Modules\Search-Array.ps1
 
 #Get-ScriptsList
 $csv = Import-CSV .\Scripts.csv

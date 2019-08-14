@@ -10,7 +10,7 @@
      Author     : Benjamin Gardner bgardner160@gmail.com
 #>
 
-. \\internal.northwestmotorsportinc.com\resources\scripts\Modules\Export-GPOs.ps1
+. \\internal.CONTOSO.com\resources\scripts\Modules\Export-GPOs.ps1
 
 #Look for last run log and import date, otherwise date is -24hrs
 Try {

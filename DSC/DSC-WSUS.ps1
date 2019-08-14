@@ -28,7 +28,7 @@ Configuration WSUS {
         }
         UpdateServicesServer UpstreamServer {
             Ensure = "Present"
-            UpStreamServerName = "nwmsvs400.internal.northwestmotorsportinc.com"
+            UpStreamServerName = "nwmsvs400.internal.CONTOSO.com"
             UpStreamServerPort = "8531"
             UpStreamServerSSL = $True
             UpStreamServerReplica = $True

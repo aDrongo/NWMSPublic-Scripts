@@ -1,5 +1,5 @@
 ﻿#Generate simple Password
-. \\internal.northwestmotorsportinc.com\resources\scripts\Modules\Get-RandomCharacters.ps1
+. \\internal.CONTOSO.com\resources\scripts\Modules\Get-RandomCharacters.ps1
 function GeneratePassword(){
     $Password = Get-RandomCharacters -length 6 -characters 'abcdefghikmnoprtuvwxyz'
     $Password += Get-RandomCharacters -length 1 -characters 'ABCDEFGHKLMNPRTUVWXYZ'
