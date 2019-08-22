@@ -23,8 +23,8 @@
   [String]Path or Files to exclude search from. Takes precedence over Search term.
 
  .Example
-   # Finds a file in my documents with title 1on1
-   Find-File -Path "$env:HOMEPATH\Documents" -Search "1on1"
+   # Finds any file in my working directory with my email address in it.
+   Find-String -Search "bgardner160@gmail.com"
 
  .NOTES
         If outputing to terminal, you may may want to Format List the output for readability.
