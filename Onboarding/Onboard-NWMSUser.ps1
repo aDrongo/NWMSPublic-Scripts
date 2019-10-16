@@ -36,33 +36,25 @@ Import-Module ActiveDirectory
 
 . \\internal.contoso.com\resources\scripts\Select-ADUser.ps1
 . \\internal.contoso.com\resources\scripts\Modules\GeneratePassword.ps1
-. \\internal.contoso.com\resources\scripts\Modules\Search-Dictionary.ps1
 . \\internal.contoso.com\resources\scripts\Modules\DealerSocketSignature.ps1
 . \\internal.contoso.com\resources\scripts\Modules\SyncADUserFromDealerMe.ps1
 
-#Get Stores list from CSV
-$csv = Get-Content \\internal.contoso.com\resources\scripts\Onboarding\Stores.csv | Select-String '^[^#]' | ConvertFrom-Csv -Delimiter ';'
-$Stores = @{}
-$i=0
-
-#Convert CSV into Dictionary with values as an Array
-foreach ($item in $csv){
-    $i++
-    $array = $($item.Value).split(',')
-    $Stores[[int]$($i)] = $array
+#Get Positions list
+Try { $PositionsCsv = Get-Content \\internal.contoso.com\resources\scripts\Onboarding\Positions.csv | Select-String '^[^#]' -ErrorAction Stop } Catch { Write-Output "Error: $($Error[0])";Pause;Exit}
+$Positions = New-Object System.Collections.ArrayList
+Foreach ($Item in $PositionsCSV){
+    $Item = $Item -split ","
+    $Positions.add([PSCustomObject]@{Title = $Item[0]; Department = $Item[1]; SecurityGroup = $Item[2]; EmailGroup = $Item[3]; DealerMe = $Item[4]; Details = $Item[5]})
 }
 
-#Get Positions list from CSV
-$csv = Get-Content \\internal.contoso.com\resources\scripts\Onboarding\Positions.csv | Select-String '^[^#]' | ConvertFrom-Csv -Delimiter ';'
-$Positions = @{}
-$i=0
-
-#Convert CSV into Dictionary with values as an Array
-foreach ($item in $csv){
-    $i++
-    $array = $($item.Value).split(',')
-    $Positions[[int]$($i)] = $array
+#Get Stores list
+Try{ $StoresCsv = Get-Content \\internal.contoso.com\resources\scripts\Onboarding\Stores.csv | Select-String '^[^#]' -ErrorAction Stop } Catch { Write-Output "Error: $($Error[0])";Pause;Exit}
+$Stores = New-Object System.Collections.ArrayList 
+Foreach ($Item in $StoresCSV){
+    $Item = $Item -split ","
+    $Stores.add([PSCustomObject]@{Store = $Item[0]; OU = $Item[1]; Group = $Item[2]; City = $Item[3]; PO = $Item[4]; DealerMe = $Item[5]; SocketTeam = $Item[6]; SocketManager = $Item[7]})
 }
+
 cls
 
 Write-Host("Logging to $logpath")
@@ -72,65 +64,87 @@ Write-Host("Logging to $logpath")
 
 #Get Hire Status
 $HireStatus = $null
-While ($HireStatus -notmatch '[NRT]'){
+While ($HireStatus -notmatch '[NRT]' -OR $HireStatus.Length -ne '1'){
     $HireStatus = $(Read-Host('Is this a new user(N) or re-hire(R) or transfer(T)? N/R/T'))
 }
 
-#Get User Data
-$FirstName = $(Read-Host('Enter First Name'))
-Write-Output $FirstName
-$LastName = $(Read-Host('Enter Last Name'))
-Write-Output $LastName
-
-if ($HireStatus -notmatch "T"){
-  #Get extra data
-  $Mobile = $(Read-Host('Enter Mobile'))
-  Write-Output $Mobile
-  $ID = $(Read-Host('Enter ID'))
-  Write-Output $ID
-
-  #Generate Passwords
-  $Password1 = GeneratePassword
-  $Password2 = GeneratePassword
-  $Password3 = GeneratePassword
-
-  #Write output for Transcript records
-  Write-Output $Password1
-  Write-Output $Password2
-  Write-Output $Password3
-
-  #Secure version for AD
-  $PasswordSecure = $Password1 | ConvertTo-SecureString -AsPlainText -Force
-}
-#Combine user data
-$FullName = $FirstName+' '+$LastName
-$Sam = ($FirstName+'.'+$LastName).ToLower()
-$UPN = $Sam+'@contoso.com'
-
-#Get users Title from Dictionary, Search Dictionary and retrieve index with associated values, option to skip/create Title.
-#Indexes are respectively Title, Department, Security Group, Distribution Group, DealerMe, Details
-Write-Host 'Select a Title:'
-$PositionNumber = Search-Dictionary($Positions)
-if ($PositionNumber -notmatch "skip"){
-    $Position = $Positions.$([int]$($PositionNumber))[0,1,2,3,4,5]
-    Write-Host "You selected: $PositionNumber"
-    Write-Host "Title:$($Position[0])"
-}
-#Option to Manually enter Title/Department
-if ($PositionNumber -match "skip"){
-    $Position = @($(Read-Host('Enter Title')),$(Read-Host('Enter Department')))
+if($HireStatus -match '[RT]'){
+    $User = Select-ADUser
+    if($User){
+        $FirstName = $User.GivenName
+        $LastName = $User.Surname
+        $Mobile = $(Get-ADUser -Identity $User.SamAccountName -Properties MobilePhone).MobilePhone
+        $UPN = $User.UserPrincipalName
+        $Sam = $User.SamAccountName
+    }
+    else{
+        $HireStatus = "N"
+    }
 }
 
-#Get Location from Dictionary, Search Dictionary and retrieve index with associated values
-#Indexes are res[ectively OU,Group/Address,City,PO,DealerMe,Team,Manager
-Write-Host 'Select a Store:'
-$LocationIndex = Search-Dictionary($Stores)
-$Location = $Stores.$([int]$($LocationIndex))[1,2,3,4,5,6]
-$OU = $Stores.$([int]$($LocationIndex))[0]
-Write-Host "You selected: $OU"
+if($HireStatus -match '[N]'){
+    #Get User Data
+    $FirstName = $(Read-Host('Enter First Name'))
+    Write-Output $FirstName
+    $LastName = $(Read-Host('Enter Last Name'))
+    Write-Output $LastName
+    $Mobile = $(Read-Host('Enter Mobile'))
+    Write-Output $Mobile
+    $ID = $(Read-Host('Enter ID'))
+    Write-Output $ID
+    #Combine user data
+    $FullName = $FirstName+' '+$LastName
+    $Sam = ($FirstName+'.'+$LastName).ToLower()
+    $UPN = $Sam+'@nwmotorsport.com'
+}
 
-#Get OU Path from Location
-$OUPath = "OU=$OU,OU=contoso Users,DC=internal,DC=contoso,DC=com"
+
+#Generate Passwords
+$PasswordforAD = GeneratePassword
+$PasswordforKey = GeneratePassword
+$PasswordforV = GeneratePassword
+
+#Write output for Transcript records
+Write-Output $PasswordforAD
+Write-Output $PasswordforKey
+Write-Output $PasswordforV
+
+
+#Secure version for AD
+$PasswordSecure = $PasswordforAD | ConvertTo-SecureString -AsPlainText -Force
+
+#Get Users new Position
+Write-Host "Please enter the matching index for their Position or 'skip' for manual creation"
+$I = 0
+Foreach ($Item in $Positions){
+    $I++ 
+    Write-Host "$I $($Item.Title)"
+}
+Do{ $PositionIndex = Read-Host "Index" } Until ($PositionIndex -in 1 .. $($Positions.Count) -OR $PositionIndex -match "skip")
+if ($PositionIndex -notmatch "skip"){
+    $Position = $Positions[$($PositionIndex - 1)]
+    Write-Host "You selected: $($Position.Title)"
+}
+#Manually enter Title/Department
+Else{
+    $Position = New-Object System.Collections.ArrayList
+    $Position.add([PSCustomObject]@{Title = $(Read-Host('Enter Title')); Department = $(Read-Host('Enter Department'))})
+}
+
+
+#Get Users new Store
+Write-Host "Please enter the matching index for their Store"
+$I = 0
+Foreach ($Item in $Stores){
+    $I++ 
+    Write-Host "$I $($Item.Store)"
+}
+Do{ $StoreIndex = Read-Host "Index" } Until ($StoreIndex -in 1 .. $($Stores.Count))
+$Store = $Stores[$($StoreIndex - 1)]
+Write-Host "You selected: $($Store.Store)"
+
+#Get OU Path from Store
+$OUPath = "OU=$($Store.OU),OU=contoso Users,DC=internal,DC=contoso,DC=com"
 
 #endregion
 #region section three - set user
@@ -138,50 +152,20 @@ $OUPath = "OU=$OU,OU=contoso Users,DC=internal,DC=contoso,DC=com"
 #If Re-Hire
 if ($HireStatus -like 'R'){
     #Splat data for rehire
-    $OldUser = @{
+    $RehireUser = @{
             'ChangePasswordAtLogon' = $True
             'Enabled' = $True
     }
-    Write-Output $OldUser
-
-    #Get user and make changes
-    $User = @()
-    Try {
-        $User = Select-ADUser -Identity $FullName -ErrorAction Stop
-        if ($(Read-Host('Procceed with this user? Y/N')) -match 'y'){
-            $User | Set-ADUser @OldUser -Verbose
-            Set-ADAccountPassword -Identity $User -NewPassword $PasswordSecure -Verbose
-            $User | Move-ADObject -TargetPath $OUPath -Verbose
-            Set-ADuser -Identity $User.ObjectGUID.Guid -Replace @{msExchHideFromAddressLists="FALSE"} -verbose -ErrorAction SilentlyContinue
-        }
-    }
-
-    #If can't find user, allow them to create
-    Catch {
-        if ($(Read-Host("Couldn't find user. Create new user? Y/N")) -match 'y'){
-            $HireStatus = 'N'
-        }
-        else {
-            Write-Host('Nothing to do, exiting')
-            sleep 5
-            exit
-        }
-    }
+    #make changes to user
+    Set-ADAccountPassword -Identity $User -NewPassword $PasswordSecure -Verbose
+    $User | Set-ADUser @RehireUser -Verbose
+    $User | Move-ADObject -TargetPath $OUPath -Verbose
+    Set-ADuser -Identity $User.ObjectGUID.Guid -Replace @{msExchHideFromAddressLists="FALSE"} -verbose -ErrorAction SilentlyContinue
 }
 
 #If Transfer
 if ($HireStatus -like 'T'){
-    #Get user and make changes
-    $User = @()
-    While ($User.count -le 1){
-        $User = Select-ADUser -Identity $Sam
-        if ($(Read-Host('Procceed with this user? Y/N')) -match 'y'){
-            $User | Move-ADObject -TargetPath $OUPath -Verbose
-        }
-        else {
-          $Sam = Read-Host('Enter a different Sam')
-        }
-    }
+    $User | Move-ADObject -TargetPath $OUPath -Verbose
 }
 
 #If New Hire
@@ -193,7 +177,7 @@ if ($HireStatus -like 'N'){
             'GivenName' = $FirstName
             'Surname' = $LastName
             'DisplayName' = $FullName
-            'UserPrincipalName' = $Sam+'@contoso.com'
+            'UserPrincipalName' = $Sam+'@nwmotorsport.com'
             'AccountPassword' = $PasswordSecure
             'ChangePasswordAtLogon' = $True
             'Path' = $OUPath
@@ -202,21 +186,31 @@ if ($HireStatus -like 'N'){
     Write-Output $NewUser
     #Create User
     New-ADUser @NewUser -Verbose
+    #Wait for user to be Created
+    $I = 0
+    Do{
+    Write-Host "Checking for User Creation, Try: $I"
+    Sleep $I
+    $User = Get-ADUser -Identity $Sam
+    $I++}
+    Until($User)
 }
 
-#Select AD Object if not already selected
-Try{
-    if ($User.GetType().FullName -ne "Microsoft.ActiveDirectory.Management.ADUser"){
-        $User = Select-ADUser -Identity $Sam
+#Remove existing groups
+if ($HireStatus -match '[RT]'){
+    $UserGroups = Get-ADUser -Identity $User.UserPrincipalName -Properties MemberOf
+    Write-Host "Removing Groups"
+    Foreach ($UserGroup in $UserGroups.MemberOf){
+        Remove-ADGroupMember -Identity $UserGroup -Members $User.UserPrincipalName -Verbose -Confirm
     }
 }
-Catch { $User = Select-ADUser -Identity $Sam }
 
 #Skip if custom Groups defined
-if ($PositionNumber -notmatch "skip"){
+if ($PositionIndex -notmatch "skip"){
     #Add to Groups
-    Add-ADGroupMember -Identity $Position[2] -Members $Sam -Verbose
-    Add-ADGroupMember -Identity $($Location[0]+' '+$Position[3]) -Members $Sam -Verbose
+    Write-Host "Adding Groups"
+    Add-ADGroupMember -Identity $($Position.SecurityGroup) -Members $User.UserPrincipalName -Verbose
+    Add-ADGroupMember -Identity $($Store.Group+' '+$Position.EmailGroup) -Members $User.UserPrincipalName -Verbose
 }
 
 #endregion
@@ -224,76 +218,129 @@ if ($PositionNumber -notmatch "skip"){
 
 #Proxy Address Update script
 If($(Read-Host('Run Directory Update? Y/N')) -match 'y'){
-    invoke-item "\\server\public\Directory Maintainence\SMTP Batch Update.vbs"
-    Write-Host "Proceed after directory update"
+    invoke-item "\\zeus\public\Directory Maintainence\SMTP Batch Update.vbs"
+    Write-Host "Proceed after directory update is complete"
 }
 
-#Create Selenium script from template
-$Script = Get-Content "\\internal.contoso.com\resources\scripts\Onboarding\Onboard.side"
-$Script = $Script.Replace('$FirstName',"$($FirstName)")
-$Script = $Script.Replace('$LastName',"$($LastName)")
-$Script = $Script.Replace('$FullName',"$($FullName)")
-$Script = $Script.Replace('$Title',"$($Position[0])")
-Try {
-  $Script = $Script.Replace('$Department',"$($Position[3])")
-}
-Catch {Write-Ouput "Failed to add a Department"}
-Try {
-  $Script = $Script.Replace('$DMeDepartment',"$($Position[4])")
-}
-Catch {Write-Ouput "Failed to add a Dealer Me Department"}
-Try {
-  $Script = $Script.Replace('$Location',"$($Location[3])")
-}
-Catch {Write-Ouput "Failed to add a Location"}
-$Script = $Script.Replace('$team',"$($Location[4])")
-$Script = $Script.Replace('$manager',"$($Location[5])")
-$Script = $Script.Replace('$Sam',"$($Sam)")
-$Script = $Script.Replace('$Email',"$($UPN)")
-if ($HireStatus -notmatch "T"){
-  $Script = $Script.Replace('$ID',"$($ID)")
-  $Script = $Script.Replace('$PASSWORD2',"$($Password2)")
-  $Script = $Script.Replace('$PASSWORD3',"$($Password3)")
-  #strip mobile number
-  $MobileStrip = $Mobile -replace '[- )(]',""
-  $Script = $Script.Replace('$Mobile',"$($MobileStrip)")
+
+#Sync changes to Azure
+If($(Read-Host('Run Azure Sync? Y/N')) -match 'y'){
+    Write-Host 'Invoking Start-ADSyncSyncCycle on contosoVS400'
+    Invoke-Command -computername contosovs400 -scriptblock {Start-ADSyncSyncCycle} -Verbose -ErrorAction SilentlyContinue
 }
 
-#Export script
-$Path = "\\internal.contoso.com\resources\scripts\Onboarding\Users\$($FullName).side"
-Write-Host "Selenium script exported to $Path"
-$Script | Out-File -FilePath $Path -Force -Verbose
-
-#Open browser to use Selenium
-Try{
-    get-process -Name 'firefox'
+#Set User License
+If($(Read-Host('Assign License? Y/N?')) -match 'y'){
+    Try{ Get-AzureADTenantDetail -ErrorAction Stop 1> $null }
+    Catch { Connect-AzureAD }
+    $license_choice = $null
+    $license = New-Object -TypeName Microsoft.Open.AzureAD.Model.AssignedLicense
+    Do{
+        $license_choice = Read-Host ("1. E3 License `n2. Office 365 License`nPlease enter Number")
+    }
+    Until($license_choice -match "1|2")
+    if($license_choice -eq "1"){$license_sku = "ENTERPRISEPACK"}
+    elseif($license_choice -eq "2"){$license_sku = "O365_BUSINESS_ESSENTIALS"}
+    $license.SkuId = (Get-AzureADSubscribedSku | Where-Object -Property SkuPartNumber -Value $license_sku -EQ).SkuID
+    $licenses = New-Object -TypeName Microsoft.Open.AzureAD.Model.AssignedLicenses
+    $licenses.AddLicenses = $license
+    Do{
+        Try {
+            Set-AzureADUser -ObjectId "$($User.UserPrincipalName)" -UsageLocation "US"
+            Set-AzureADUserLicense -ObjectId "$($User.UserPrincipalName)" -AssignedLicenses $licenses -Verbose
+            $SetAzureLicenseSuccess = "Yes" 
+            }
+        Catch {
+            Write-Host "Failed:`n$($Error[0])"
+            if($(Read-Host "Try Again? Y/N?") -match "N"){
+                $SetAzureLicenseSuccess = "Cancel"
+            }
+        }
+    }
+    Until($SetAzureLicenseSuccess -match "Yes|Cancel")
 }
-Catch {
-    Start-Process -FilePath 'C:\Program Files\Mozilla Firefox\firefox.exe'
+
+#Add Azure groups
+If($(Read-Host('Add Azure groups? Y/N?')) -match 'Y'){
+    #Check if connected
+    Try{ Get-AzureADTenantDetail -ErrorAction Stop 1> $null }
+    Catch { Connect-AzureAD }
+
+    $UserObjectID = (Get-AzureADUser -ObjectId $User.UserPrincipalName).ObjectID
+    Add-AzureADGroupMember -ObjectId "b616d33c-57dc-4e9c-8a47-0a6b9732dd4b" -RefObjectId $UserObjectID -Verbose
+
+    if($($Position.Title) -eq "Sales Representative"){
+        Write-Host "Adding Sales Rep Team"
+        Add-AzureADGroupMember -ObjectId "99f211fc-bae1-41ae-bb1f-2db2b755b5e9" -RefObjectId $UserObjectID -Verbose
+    }
+    if($($Position.Title) -eq "Sales Manager"){
+        Write-Host "Adding Sales Manager Team"
+        Add-AzureADGroupMember -ObjectId "eafb6a93-27b7-42c3-867c-c0cada0a377b" -RefObjectId $UserObjectID -Verbose
+    }
+    if($($Position.Title) -match "Finance"){
+        Write-Host "Adding Finance Team"
+        Add-AzureADGroupMember -ObjectId "7e4f1f39-cb87-4074-92fe-202b81d3195f" -RefObjectId $UserObjectID -Verbose
+    }
+}
+
+if($(Read-Host "Continue creation in firefox? Y/N") -match "Y"){
+    #Create Selenium script from template
+    $Script = Get-Content "\\internal.contoso.com\resources\scripts\Onboarding\Onboard.side"
+    $Script = $Script.Replace('$FirstName',"$($FirstName)")
+    $Script = $Script.Replace('$LastName',"$($LastName)")
+    $Script = $Script.Replace('$FullName',"$($FullName)")
+    $Script = $Script.Replace('$Title',"$($Position.Title)")
+    if($PositionIndex -notmatch "skip"){
+      $Script = $Script.Replace('$Department',"$($Position.Department)")
+      $Script = $Script.Replace('$DMeDepartment',"$($Position.DealerMe)")
+      $Script = $Script.Replace('$Location',"$($Store.DealerMe)")
+    }
+    $Script = $Script.Replace('$team',"$($Store.SocketTeam)")
+    $Script = $Script.Replace('$manager',"$($Store.SocketManager)")
+    $Script = $Script.Replace('$Sam',"$($User.SamAccountName)")
+    $Script = $Script.Replace('$Email',"$($User.UserPrincipalName)")
+    $Script = $Script.Replace('$ID',"$($ID)")
+    $Script = $Script.Replace('$PASSWORD2',"$($PasswordforV)")
+    $Script = $Script.Replace('$PASSWORD3',"$($PasswordforKey)")
+    #strip mobile number
+    $MobileStrip = $Mobile -replace '[- )(]',""
+    $Script = $Script.Replace('$Mobile',"$($MobileStrip)")
+    #export script
+    $Path = "\\internal.contoso.com\resources\scripts\Onboarding\Users\$($FullName).side"
+    Write-Host "Selenium script exported to $Path"
+    $Script | Out-File -FilePath $Path -Force -Verbose
+    #Open browser to use Selenium
+    Try{
+        get-process -Name 'firefox' -ErrorAction Stop
+    }
+    Catch {
+        Start-Process -FilePath 'C:\Program Files\Mozilla Firefox\firefox.exe'
+    }
 }
 
 #Open documentation sheet
-if ($HireStatus -notmatch "T"){Invoke-Item "$($env:UserProfile)\contoso\IT Department - Documents\Employee Management\Employee Onboarding Worksheet.dotx"}
+if ($HireStatus -notmatch "T"){Invoke-Item "$($env:UserProfile)\contoso\IT Department - Documents\Employee Management\Employee Onboarding Worksheet NEW.dotx"}
 else {Invoke-Item "$($env:UserProfile)\contoso\IT Department - Documents\Employee Management\Employee Transfer Worksheet.dotx"}
 
 #Data to copy into sheet
 $DataSheet = "
 Name = $FullName
 Mobile Number = $Mobile
-Email Address = $Upn
+Email Address = $($User.UserPrincipalName)
 ID = $ID
-Position = $($Position[0])
-Location = $($Location[1]+' '+$Location[0])
-SAM = $Sam
-OU = $OU
-AD Password = $Password1
-Keytrak Password = $Password3
-VAuto Password = $Password2
-Groups = $($Position[2])
-Groups = $($Location[0]+' '+$Position[3])
-Sales Team = $($Location[4])
-Sales Manager = $($Location[5])
-Details = $($Position[5])
+Position = $($Position.Title)
+Location = $($Store.Store)
+SAM = $($User.SamAccountName)
+OU = $($Store.OU)
+$(if ($HireStaus -notmatch "T"){"AD Password = $PasswordforAD"})
+Keytrak Password = $PasswordforKey
+VAuto Password = $PasswordforV
+Groups = $($Position.SecurityGroup)
+Groups = $($Store.Group+' '+$Position.EmailGroup)
+DealerSocket Name = Nw1$($FirstName[0])$Lastname
+DealerSocket Team = $($Store.SocketTeam)
+DealerSocket Manager = $($Store.SocketManager)
+Details = $($Position.Details)
 "
 Echo $DataSheet
 #save to temp
@@ -302,26 +349,20 @@ $DataSheet > "temp.txt"
 #open temp data
 invoke-item .\temp.txt
 
-Write-Host "Please enable Mailbox first then DealerMe then other steps"
-Write-Host "User shoud be granted: $($Position[5])"
-
 #endregion
 #region section five - dealersocket sig
 
-#Sync AD user with Dealerme
-If($(Read-Host("Update DealerMe before running this.`nRun AD Sync Update? Y/N")) -match 'y'){
-    Sync-ADUserFromDealerMe -ADUser $User
-    Write-Host "Proceed after AD Sync update"
+#Sync AD user with DealerMe
+If($(Read-Host("Sync AD User from DealerMe? Y/N")) -match 'y'){
+    $User | Sync-ADUserFromDealerMe
 }
 
-#Get sales1 Signature
-If($(Read-Host('Continue with Sales Signature? Y/N')) -match 'y'){
-$Signature = Get-DealerSocketSignature -Identity $Sam
-Set-Clipboard $Signature
-Write-Host $Signature
-Write-Host ("Sales Signature set to clipboard")
-#open with Chrome because it's a stupid website
-[system.Diagnostics.Process]::Start("chrome","Sales1")
+#Get DealerSocket Signature
+If($(Read-Host('Continue with DealerSocket Signature? Y/N')) -match 'y'){
+    $Signature = Get-DealerSocketSignature -Identity $User.SamAccountName
+    Set-Clipboard $Signature
+    Write-Host $Signature
+    Write-Host ("DealerSocket Signature set to clipboard")
 }
 #endregion
 Stop-Transcript
