@@ -1,0 +1,33 @@
+{
+  "Position":
+    [
+      {"Title": "Sales Representative","Security": "Sales Department","License": "Business Essentials","Services": [ "Active Directory", "OtherServices" ]},
+    ],
+  "Location":
+    [
+      "Store1",
+      "Store2"
+    ],
+  "Service":
+    {
+      "Active Directory":
+        {
+          "OU":
+            {
+              "Contoso"
+            },
+          "ReverseOU":
+            {
+              "Contoso": "Store1",
+            },
+          "AddressGroup":
+            {
+              "Store1": "Address1",
+            },
+          "DepartmentGroup":
+            {
+              "Sales Department": "Sales",
+            }
+        }
+    }
+}
