@@ -37,19 +37,20 @@
         if ($(Read-Host ('Do you want to review occurances?" Y/N')) -match 'Y'){
             #split results for each line, search each line for item count greater than 1, return the matching values
             Write-Output (($Search.SuccessResults -split "Location:") | Select-String '[\S]+ Item count: [1-9]' -AllMatches | ForEach-Object {$_.Matches.Value})
+            Write-Host ""
         }
 
         #Delete data found from Search
-        If($(Read-Host('Procede with soft Deletion? Y/N')) -match 'Y'){
-            $ComplianceSearch = New-ComplianceSearchAction -SearchName "Test1" -Purge -PurgeType SoftDelete -Verbose
+        If($(Read-Host('Proceed with Soft Deletion? Y/N')) -match 'Y'){
+            $ComplianceAction = New-ComplianceSearchAction -SearchName $ComplianceSearch.Name -Purge -PurgeType SoftDelete -Verbose
             #Wait for delete
             Do{
                 Write-Host "Waiting to complete..."
                 Sleep 5
             }
-            Until($(Get-ComplianceSearchAction -Identity $ComplianceSearch.Name).Status -eq 'Completed')
+            Until($(Get-ComplianceSearchAction -Identity $ComplianceAction.Name).Status -eq 'Completed')
             #Inform User
-            Write-Output (Get-ComplianceSearchAction -Identity $ComplianceSearch.Name)
+            Write-Output (Get-ComplianceSearchAction -Identity $ComplianceAction.Name)
         }
     }
     Stop-Transcript
