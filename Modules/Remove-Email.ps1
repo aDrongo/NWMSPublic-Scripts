@@ -8,7 +8,7 @@
     # Connect to the IPPSSession (This will prompt for credentials)
     Connect-IPPSSession
 
-    #Get Query String from User
+    #Get Name & Query String from User
     cls
     Write-Host "You are starting the remove-email process, please follow the below link for query syntax"
     Write-Host "https://docs.microsoft.com/en-us/sharepoint/dev/general-development/keyword-query-language-kql-syntax-reference?redirectedfrom=MSDN"
@@ -27,20 +27,21 @@
         Sleep 5
     }
     Until($(Get-ComplianceSearch -Identity $ComplianceSearch.Name).Status -eq 'Completed')
-    #Inform User
+    #Get new data
+    $ComplianceSearch = Get-ComplianceSearch -Identity $ComplianceSearch.Name
+    #Inform user
     Write-Output $ComplianceSearch | Select Name,ContentMatchQuery,Items,JobEndTime,RunBy,Status
 
     #Return Search Result Count
-    $Search = (Get-ComplianceSearch -Identity $ComplianceSearch.Name).SearchStatistics | ConvertFrom-Json
-    Write-Host "Found $($Search.ExchangeBinding.Search.ContentItems) Occurances"
-    if ($($Search.ExchangeBinding.Search.ContentItems) -gt 0){
+    Write-Host "Found $($ComplianceSearch.Items) Occurances"
+    if ($ComplianceSearch.Items -gt 0){
         if ($(Read-Host ('Do you want to review occurances?" Y/N')) -match 'Y'){
             #split results for each line, search each line for item count greater than 1, return the matching values
-            Write-Output (($Search.SuccessResults -split "Location:") | Select-String '[\S]+ Item count: [1-9]' -AllMatches | ForEach-Object {$_.Matches.Value})
+            Write-Output (($ComplianceSearch.SuccessResults -split "Location:") | Select-String '[\S]+ Item count: [1-9]' -AllMatches | ForEach-Object {$_.Matches.Value})
             Write-Host ""
         }
 
-        #Delete data found from Search
+        #Create Action to delete data
         If($(Read-Host('Proceed with Soft Deletion? Y/N')) -match 'Y'){
             $ComplianceAction = New-ComplianceSearchAction -SearchName $ComplianceSearch.Name -Purge -PurgeType SoftDelete -Verbose
             #Wait for delete
