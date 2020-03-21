@@ -1,9 +1,8 @@
 #Need to install AWS CLI and run aws configure first
-#Need to pip install pandas and openpyxl and xlsxwriter
 
 import boto3
 import datetime
-import pandas
+import json
 
 class Instance:
     id = ""
@@ -21,10 +20,7 @@ class Instance:
     
     def addPlatform(self,platform):
         self.platform = platform
-    
-    def __repr__(self):
-        return f"{self.name}"
-    
+
     def toDict(self):
         return dict(Name = self.name,
                     Type = self.ec2type,
@@ -48,6 +44,7 @@ class Reservation:
 class ReservationUsage:
     instances = []
     reservations = []
+    dictOut = {"Instances" :[], "Reservations" : []}
 
     def __init__(self):
         self.getReservations()
@@ -89,27 +86,20 @@ class ReservationUsage:
                     instance.reserved = True
                     reservation.consumed = True
                     break
+    
+    def convertDict(self):
+        for instance in self.instances:
+            instanceDict = instance.toDict()
+            self.dictOut['Instances'].append(instanceDict)
+        for reservation in self.reservations:
+            reservationDict = reservation.toDict()
+            self.dictOut['Reservations'].append(reservationDict)
 
-    def _getDataFrame(self,objects):
-        exportList = []
-        for obj in objects:
-            exportList.append(obj.toDict())
-        return pandas.DataFrame(exportList)
-
-    def exportExcel(self):
-        df1 = self._getDataFrame(self.reservations)
-        df2 = self._getDataFrame(self.instances)
-        writer = pandas.ExcelWriter('Reservations.xlsx', engine='xlsxwriter')
-        df1.to_excel(writer, sheet_name='RIs')
-        df2.to_excel(writer, sheet_name='Instances')
-        writer.save()
-
-def s3Upload(filePath, bucket):
-    s3 = boto3.resource('s3')
-    s3.meta.client.upload_file(filePath, bucket, filePath)
-
-if __name__ == "__main__":
+def lambda_handler(event, context):
     reserveUsage = ReservationUsage()
     reserveUsage.getUsedAndReserved()
-    reserveUsage.exportExcel()
-    s3Upload('Reservations.xlsx',"reports.nwmotorsport.com")
+    reserveUsage.convertDict()
+    return {
+        'statusCode': 200,
+        'body': json.dumps(reserveUsage.dictOut)
+    }
