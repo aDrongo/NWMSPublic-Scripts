@@ -44,13 +44,14 @@ class Reservation:
 class ReservationUsage:
     instances = []
     reservations = []
-    dictOut = {"Instances" :[], "Reservations" : []}
+    dictOut = {}
 
     def __init__(self):
         self.getReservations()
         self.getInstances()
     
     def getReservations(self):
+        self.reservations = []
         ec2 = boto3.client('ec2')
         prelim_reservations = ec2.describe_reserved_instances()['ReservedInstances']
         for reservation in prelim_reservations:
@@ -61,6 +62,7 @@ class ReservationUsage:
                     self.reservations.append(newReservation)
     
     def getInstances(self):
+        self.instances = []
         ec2 = boto3.client('ec2')
         ec2Instances = ec2.describe_instances()['Reservations']
         for instance in ec2Instances:
@@ -88,18 +90,23 @@ class ReservationUsage:
                     break
     
     def convertDict(self):
+        self.dictOut = {"Instances" :[], "Reservations" : []}
         for instance in self.instances:
             instanceDict = instance.toDict()
             self.dictOut['Instances'].append(instanceDict)
         for reservation in self.reservations:
             reservationDict = reservation.toDict()
             self.dictOut['Reservations'].append(reservationDict)
-
-def lambda_handler(event, context):
+    
+def main():
     reserveUsage = ReservationUsage()
     reserveUsage.getUsedAndReserved()
     reserveUsage.convertDict()
+    return json.dumps(reserveUsage.dictOut)
+
+def lambda_handler(event, context):
+    output = main()
     return {
         'statusCode': 200,
-        'body': json.dumps(reserveUsage.dictOut)
+        'body': output
     }
